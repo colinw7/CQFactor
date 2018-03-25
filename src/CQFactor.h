@@ -1,0 +1,190 @@
+#ifndef CQFactor_H
+#define CQFactor_H
+
+#include <QWidget>
+#include <vector>
+
+class QSpinBox;
+
+namespace CQFactor {
+
+class App;
+
+class Window : public QWidget {
+  Q_OBJECT
+
+ public:
+  Window(QWidget *parent=0);
+
+  QSize sizeHint() const { return QSize(800, 800); }
+
+ signals:
+  void factorEntered(int i);
+
+ private slots:
+  void factorSlot();
+  void debugSlot(int);
+
+ private:
+  App*      app_  { nullptr };
+  QSpinBox* edit_ { nullptr };
+};
+
+//------
+
+class Circle;
+
+using Circles = std::vector<Circle *>;
+
+//---
+
+class App : public QWidget {
+  Q_OBJECT
+
+  Q_PROPERTY(bool debug READ debug WRITE setDebug)
+
+ public:
+  App(QWidget *parent=0);
+ ~App();
+
+  bool debug() const { return debug_; }
+  void setDebug(bool debug);
+
+  void reset();
+
+ public slots:
+  void factorEntered(int i);
+
+ private:
+  using Factors = std::vector<int>;
+
+ private:
+  void calc();
+
+  double s() const { return s_; }
+  void setS(double s, double maxS) { s_ = s; maxS_ = maxS; }
+
+  double maxS() const { return maxS_; }
+
+  void paintEvent(QPaintEvent *);
+
+  void calcFactors(Circle *circle, const Factors &f);
+  void calcPrime  (Circle *circle, int n);
+
+  void draw(QPainter *painter);
+
+ private:
+  friend class Circle;
+
+  int             factor_  { 1 };
+  bool            debug_   { false };
+  mutable Factors factors_;
+  mutable Circle* circle_  { nullptr };
+  mutable double  s_       { 1.0 };
+  mutable double  maxS_    { 1.0 };
+  mutable QPointF pos_;
+  mutable double  size_    { 1.0 };
+};
+
+//---
+
+struct CirclePoint {
+  const Circle *circle { nullptr };
+  QPointF       point;
+
+  CirclePoint(const Circle *c, const QPointF &p) :
+   circle(c), point(p) {
+  }
+};
+
+//---
+
+using CirclePoints = std::vector<CirclePoint>;
+
+using Points = std::vector<QPointF>;
+
+//---
+
+class Circle {
+ public:
+  static std::size_t lastId() { return lastIdRef(); }
+
+  static void resetId() { lastIdRef() = 0; }
+
+  Circle(App *factor);
+  Circle(App *factor, Circle *parent, std::size_t n);
+
+ ~Circle();
+
+  std::size_t id() const { return id_; }
+
+  void setId(std::size_t n);
+
+  double x() const { return c_.x(); }
+  double y() const { return c_.y(); }
+  double r() const { return r_; }
+
+  double a() const { return a_; }
+  void setA(double a) { a_ = a; }
+
+  double xc() const { return xc_; }
+  double yc() const { return yc_; }
+
+  void addCircle(Circle *circle);
+
+  void addPoint();
+
+  void place();
+
+  //double calcR() const;
+
+  void fit();
+
+  void move  (double x, double y);
+  void moveBy(double dx, double dy);
+
+  double closestCircleCircleDistance() const;
+
+  double closestPointDistance() const;
+
+  double closestSize() const;
+
+  std::size_t size() const;
+
+  QPointF center() const;
+
+  void getPoints(Points &points) const;
+
+  void getCirclePoints(CirclePoints &points) const;
+
+  std::size_t numPoints() const { return points_.size(); }
+
+  QPointF getPoint(int i) const;
+  void setPoint(int i, const QPointF &p) { points_[i] = p; }
+
+  void draw(QPainter *painter, const QPointF &pos, double size);
+
+ private:
+  static std::size_t &lastIdRef() {
+    static std::size_t lastId;
+
+    return lastId;
+  }
+
+ private:
+  App*        app_    { nullptr };   // parent app
+  Circle*     parent_ { nullptr };   // parent circle (0 if none)
+  std::size_t id_     { 0 };         // index (for color)
+  std::size_t n_      { 0 };         // index in parent
+  QPointF     c_;                    // center (0->1 (screen size))
+  double      r_      { 0.5 };       // radius
+  double      a_      { -M_PI/2.0 }; // angle
+  Points      points_;               // offset from center (0-1)
+  Circles     circles_;              // sub circles
+  double      xc_     { 0.0 };
+  double      yc_     { 0.0 };
+};
+
+}
+
+#endif
