@@ -5,6 +5,7 @@
 #include <vector>
 
 class QSpinBox;
+class QTimer;
 
 namespace CQFactor {
 
@@ -15,6 +16,8 @@ class Window : public QWidget {
 
  public:
   Window(QWidget *parent=0);
+
+  void setFactor(int i);
 
   QSize sizeHint() const { return QSize(800, 800); }
 
@@ -36,12 +39,30 @@ class Circle;
 
 using Circles = std::vector<Circle *>;
 
+//----
+
+struct DrawCircle {
+  QRectF rect;
+  QColor pen;
+  QColor brush;
+  QRectF oldRect;
+  QColor oldPen;
+  QColor oldBrush;
+
+  DrawCircle() = default;
+
+  DrawCircle(const QRectF &rect, const QColor &pen, const QColor &brush) :
+   rect(rect), pen(pen), brush(brush) {
+  }
+};
+
 //---
 
 class App : public QWidget {
   Q_OBJECT
 
-  Q_PROPERTY(bool debug READ debug WRITE setDebug)
+  Q_PROPERTY(bool debug          READ debug          WRITE setDebug         )
+  Q_PROPERTY(int  animIterations READ animIterations WRITE setAnimIterations)
 
  public:
   App(QWidget *parent=0);
@@ -50,7 +71,16 @@ class App : public QWidget {
   bool debug() const { return debug_; }
   void setDebug(bool debug);
 
+  int animIterations() const { return animIterations_; }
+  void setAnimIterations(int i) { animIterations_ = i; }
+
+  void addTimer();
+
   void reset();
+
+  void addDrawCircle(const QRectF &r, const QColor &pen, const QColor &brush);
+
+  void addDebugCircle(const QRectF &r, const QColor &pen, const QColor &brush);
 
  public slots:
   void factorEntered(int i);
@@ -59,6 +89,16 @@ class App : public QWidget {
   using Factors = std::vector<int>;
 
  private:
+  void applyFactor();
+
+  void saveOld();
+
+  void addFadeOut();
+
+  void resetFade();
+
+  void animate();
+
   void calc();
 
   double s() const { return s_; }
@@ -68,22 +108,43 @@ class App : public QWidget {
 
   void paintEvent(QPaintEvent *);
 
+  void resizeEvent(QResizeEvent *);
+
   void calcFactors(Circle *circle, const Factors &f);
   void calcPrime  (Circle *circle, int n);
 
+  void generate();
+
+  void animateStep();
+
   void draw(QPainter *painter);
+
+ private slots:
+  void animateSlot();
 
  private:
   friend class Circle;
 
-  int             factor_  { 1 };
-  bool            debug_   { false };
-  mutable Factors factors_;
-  mutable Circle* circle_  { nullptr };
-  mutable double  s_       { 1.0 };
-  mutable double  maxS_    { 1.0 };
-  mutable QPointF pos_;
-  mutable double  size_    { 1.0 };
+  using DrawCircles = std::vector<DrawCircle>;
+
+  int         factor_  { 1 };
+  bool        debug_   { false };
+  Factors     factors_;
+  Circle*     circle_  { nullptr };
+  double      s_       { 1.0 };
+  double      maxS_    { 1.0 };
+  QPointF     pos_;
+  double      size_    { 1.0 };
+
+  int     animIterations_ { 100 };
+  QTimer *animateTimer_   { nullptr };
+  int     animateCount_   { 0 };
+
+  DrawCircles drawCircles_;
+  DrawCircles debugCircles_;
+
+  DrawCircles oldDrawCircles_;
+  int         oldInd_  { 0 };
 };
 
 //---
@@ -100,8 +161,7 @@ struct CirclePoint {
 //---
 
 using CirclePoints = std::vector<CirclePoint>;
-
-using Points = std::vector<QPointF>;
+using Points       = std::vector<QPointF>;
 
 //---
 
@@ -111,8 +171,8 @@ class Circle {
 
   static void resetId() { lastIdRef() = 0; }
 
-  Circle(App *factor);
-  Circle(App *factor, Circle *parent, std::size_t n);
+  Circle(App *app);
+  Circle(App *app, Circle *parent, std::size_t n);
 
  ~Circle();
 
@@ -162,7 +222,7 @@ class Circle {
   QPointF getPoint(int i) const;
   void setPoint(int i, const QPointF &p) { points_[i] = p; }
 
-  void draw(QPainter *painter, const QPointF &pos, double size);
+  void generate(const QPointF &pos, double size);
 
  private:
   static std::size_t &lastIdRef() {

@@ -9,6 +9,14 @@ var factors = new Factors();
 function eventWindowLoaded () {
   if (canvasSupport()) {
     factors.init();
+
+    (function drawFrame () {
+      var canvas = document.getElementById("canvas");
+
+      window.requestAnimationFrame(drawFrame, canvas);
+
+      factors.animateStep();
+    }());
   }
 }
 
@@ -55,20 +63,14 @@ function HSVtoRGB(h, s, v) {
     }
   }
 
-  return { "r":r, "g":g, "b":b };
-}
-
-function encodeRGB(r, g, b) {
-  var s = "rgb(" + String(255*r) + "," + String(255*g) + "," + String(255*b) + ")";
-
-  return s;
+  return new Color(r, g, b, 1.0);
 }
 
 //------
 
 function Factors () {
   this.prime   = new Prime();
-  this.factor  = 1;
+  this.factor  = 4;
   this.debug   = false;
   this.factors = [];
   this.circle  = null;
@@ -76,6 +78,15 @@ function Factors () {
   this.maxS    = 1.0;
   this.pos     = new Point(0, 0);
   this.size    = 1.0;
+
+  this.animIterations = 100;
+  this.animateCount   = 0;
+
+  this.drawCircles  = [];
+  this.debugCircles = [];
+
+  this.oldDrawCircles = [];
+  this.oldInd         = 0;
 }
 
 Factors.prototype.init = function() {
@@ -92,6 +103,16 @@ Factors.prototype.init = function() {
 
   valueNumber.addEventListener("change", this.valueChanged, false);
 
+  valueNumber.addEventListener("keypress", function(e) {
+    if (e.which == 13) {
+      e.preventDefault();
+
+      factors.valueChanged(e);
+    }
+  }, false);
+
+  //---
+
   var debugCheck = document.getElementById("debug");
 
   debugCheck.checked = false;
@@ -100,9 +121,9 @@ Factors.prototype.init = function() {
 
   //---
 
-  this.calc();
+  this.applyFactor();
 
-  this.update();
+  this.resetFade();
 };
 
 Factors.prototype.valueChanged = function(e) {
@@ -124,14 +145,103 @@ Factors.prototype.reset = function() {
   this.circle = null;
 };
 
-Factors.prototype.factorEntered = function(i) {
-console.log("Factors.prototype.factorEntered", i);
-  this.factor = i;
+Factors.prototype.addDrawCircle = function(r, pen, brush) {
+  this.drawCircles.push(new DrawCircle(r, pen, brush));
 
+  var drawCircle = this.drawCircles[this.drawCircles.length - 1];
+
+  if (this.oldInd < this.oldDrawCircles.length) {
+    var oldDrawCircle = this.oldDrawCircles[this.oldInd];
+
+    drawCircle.oldRect  = oldDrawCircle.rect;
+    drawCircle.oldPen   = oldDrawCircle.pen;
+    drawCircle.oldBrush = oldDrawCircle.brush;
+
+    ++this.oldInd;
+  }
+  else {
+    var xc = this.canvas.width /2;
+    var yc = this.canvas.height/2;
+
+    drawCircle.oldRect  = new Rect(xc - r.w/2, yc - r.h/2, r.w, r.h);
+    drawCircle.oldPen   = new Color(0, 0, 0, 0);
+    drawCircle.oldBrush = new Color(0, 0, 0, 0);
+  }
+};
+
+Factors.prototype.addDebugCircle = function(r, pen, brush) {
+  this.debugCircles.push(new DrawCircle(r, pen, brush));
+}
+
+Factors.prototype.factorEntered = function(i) {
+  if (i !== this.factor) {
+    this.factor = i;
+
+    this.applyFactor();
+  }
+};
+
+Factors.prototype.applyFactor = function() {
   this.calc();
+
+  //---
+
+  this.saveOld();
+
+  this.generate();
+
+  //---
+
+  this.addFadeOut();
+
+  //---
+
+  this.animate();
+
+  //---
 
   this.update();
 };
+
+Factors.prototype.saveOld = function() {
+  this.oldDrawCircles = this.drawCircles;
+  this.oldInd         = 0;
+};
+
+Factors.prototype.addFadeOut = function() {
+  var n1 = this.oldDrawCircles.length;
+  var n2 = this.drawCircles   .length;
+
+  var nfade = n1 - n2;
+
+  for (var i = 0; i < nfade; ++i) {
+    var drawCircle = new DrawCircle(null, null, null);
+
+    drawCircle.oldRect  = this.oldDrawCircles[n2 + i].rect;
+    drawCircle.oldPen   = this.oldDrawCircles[n2 + i].pen;
+    drawCircle.oldBrush = this.oldDrawCircles[n2 + i].brush;
+
+    drawCircle.rect  = new Rect(this.canvas.width/2, this.canvas.height/2, 0.1, 0.1);
+    drawCircle.pen   = new Color(0, 0, 0, 0);
+    drawCircle.brush = new Color(0, 0, 0, 0);
+
+    this.drawCircles.push(drawCircle);
+  }
+};
+
+Factors.prototype.resetFade = function() {
+  for (var i = 0; i < this.drawCircles.length; ++i) {
+    var drawCircle = this.drawCircles[i];
+
+    drawCircle.oldRect  = null;
+    drawCircle.oldPen   = drawCircle.pen;
+    drawCircle.oldBrush = drawCircle.brush;
+  }
+}
+
+Factors.prototype.animate = function() {
+  this.animateCount = 0;
+}
 
 Factors.prototype.calc = function() {
   this.lastId = 0;
@@ -150,7 +260,6 @@ Factors.prototype.calc = function() {
   this.circle.place();
 
   this.circle.fit();
-console.log(this.factors);
 };
 
 Factors.prototype.calcFactors = function(circle, f) {
@@ -192,17 +301,109 @@ Factors.prototype.calcPrime = function(circle, n) {
     circle.addPoint();
 };
 
+Factors.prototype.generate = function() {
+  this.drawCircles  = [];
+  this.debugCircles = [];
+
+  var xc = this.circle.xc;
+  var yc = this.circle.yc;
+
+  this.pos  = new Point(xc*this.canvas.width, (1.0 - yc)*this.canvas.height);
+  this.size = Math.min(this.canvas.width, this.canvas.height);
+
+  this.circle.generate(this.pos, this.size);
+}
+
 Factors.prototype.update = function() {
   this.draw();
+};
+
+Factors.prototype.animateStep = function() {
+  var interp = function(from, to, d) {
+    return from + (to - from)*d;
+  };
+
+  var interpPoint = function(from, to, f) {
+    return new Point(interp(from.x, to.x, f), interp(from.y, to.y, f));
+  };
+
+  var interpSize = function(from, to, f) {
+    return new Size(interp(from.w, to.w, f), interp(from.h, to.h, f));
+  };
+
+  var interpRect = function(from, to, f) {
+    var c = interpPoint(from.center(), to.center(), f);
+
+    var s = interpSize(from.size(), to.size(), f);
+
+    return new Rect(c.x - s.w/2, c.y - s.h/2, s.w, s.h);
+  };
+
+  var interpColor = function(from, to, f) {
+    return new Color(interp(from.r, to.r, f),
+                     interp(from.g, to.g, f),
+                     interp(from.b, to.b, f),
+                     interp(from.a, to.a, f));
+  };
+
+  ++this.animateCount;
+
+  if (this.animateCount < this.animIterations) {
+    var f = 1.0/(this.animIterations - this.animateCount);
+
+    for (var i = 0; i < this.drawCircles.length; ++i) {
+      var drawCircle = this.drawCircles[i];
+
+      if (drawCircle.oldRect !== null) {
+        drawCircle.oldRect  = interpRect (drawCircle.oldRect , drawCircle.rect , f);
+        drawCircle.oldPen   = interpColor(drawCircle.oldPen  , drawCircle.pen  , f);
+        drawCircle.oldBrush = interpColor(drawCircle.oldBrush, drawCircle.brush, f);
+      }
+    }
+  }
+  else {
+    for (var i = 0; i < this.drawCircles.length; ++i) {
+      var drawCircle = this.drawCircles[i];
+
+      drawCircle.oldRect = null;
+    }
+
+    //this.animateTimer.stop();
+  }
+
+  this.update();
 };
 
 Factors.prototype.draw = function() {
   this.gc.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-  this.pos  = new Point(canvas.width/2.0, canvas.height/2.0);
-  this.size = Math.min(canvas.width, canvas.height);
+  //---
 
-  this.circle.draw(this.pos, this.size);
+  for (var i = 0; i < this.drawCircles.length; ++i) {
+    var drawCircle = this.drawCircles[i];
+
+    if (drawCircle.oldRect !== null) {
+      factors.gc.strokeStyle = drawCircle.oldPen  .encodeRGB();
+      factors.gc.fillStyle   = drawCircle.oldBrush.encodeRGB();
+
+      this.drawEllipse(drawCircle.oldRect);
+    }
+    else {
+      factors.gc.strokeStyle = drawCircle.pen  .encodeRGB();
+      factors.gc.fillStyle   = drawCircle.brush.encodeRGB();
+
+      this.drawEllipse(drawCircle.rect);
+    }
+  }
+
+  for (var i = 0; i < this.debugCircles.length; ++i) {
+    var debugCircle = this.debugCircles[i];
+
+    factors.gc.strokeStyle = debugCircle.pen  .encodeRGB();
+    factors.gc.fillStyle   = debugCircle.brush.encodeRGB();
+
+    this.drawEllipse(debugCircle.rect);
+  }
 
   //---
 
@@ -252,9 +453,12 @@ Factors.prototype.draw = function() {
   this.gc.fillText(factorsStr, 20 + td2, 2*th + 20 - td);
 };
 
-Factors.prototype.drawEllipse = function(x, y, w, h) {
+Factors.prototype.drawEllipse = function(rect) {
   this.gc.beginPath();
-  this.gc.ellipse(x + w/2, y + w/2, w/2, h/2, 0, 0, 2*Math.PI, false);
+
+  this.gc.ellipse(rect.x + rect.w/2, rect.y + rect.w/2, rect.w/2, rect.h/2,
+                  0, 0, 2*Math.PI, false);
+
   this.gc.fill();
   this.gc.stroke();
 };
@@ -274,9 +478,11 @@ function Circle (parent, n) {
   this.n       = n;
   this.c       = new Point(0, 0);
   this.r       = 0.5;
-  this.a       = Math.PI/2.0;
+  this.a       = -Math.PI/2.0;
   this.points  = [];
   this.circles = [];
+  this.xc      = 0;
+  this.yc      = 0;
 }
 
 Circle.prototype.setId = function(n) {
@@ -294,7 +500,6 @@ Circle.prototype.addPoint = function() {
 };
 
 Circle.prototype.place = function() {
-console.log("Circle.prototype.place");
   if (this.circles.length > 0) {
     var nc = this.circles.length;
 
@@ -347,13 +552,15 @@ console.log("Circle.prototype.place");
 
       var r1 = this.closestCircleCircleDistance()/2;
 
-      if (Math.abs(r1 - rr) < 1E-3)
+      var dr = Math.abs(r1 - rr);
+
+      if (dr < 1E-3)
         break;
 
       if (r1 < rr)
-        this.r += 0.001;
+        this.r += dr/2;
       else
-        this.r -= 0.001;
+        this.r -= dr/2;
     }
   }
   else {
@@ -383,7 +590,6 @@ console.log("Circle.prototype.place");
 };
 
 Circle.prototype.fit = function() {
-console.log("Circle.prototype.fit");
   // get all points
   var points = [];
 
@@ -420,8 +626,10 @@ console.log("Circle.prototype.fit");
     ymax = Math.max(ymax, p1.y);
   }
 
+  //---
+
   // use closest center to defined size so points don't touch
-  var s;
+  var s = 0.0;
 
   if (d > 1E-6)
     s = Math.sqrt(d);
@@ -441,16 +649,15 @@ console.log("Circle.prototype.fit");
   factors.s    = s;
   factors.maxS = maxS;
 
-  var xc = ((xmax + xmin)/2.0 - 0.5)/maxS + 0.5;
-  var yc = ((ymax + ymin)/2.0 - 0.5)/maxS + 0.5;
+  this.xc = ((xmax + xmin)/2.0 - 0.5)/maxS + 0.5;
+  this.yc = ((ymax + ymin)/2.0 - 0.5)/maxS + 0.5;
 
-  //this.c += new Point(xc - 0.5, yc - 0.5);
+  //this.c += new Point(this.xc - 0.5, this.yc - 0.5);
 
-  this.moveBy(0.5 - xc, 0.5 - yc);
+  //this.moveBy(0.5 - this.xc, 0.5 - this.yc);
 };
 
 Circle.prototype.closestCircleCircleDistance = function() {
-console.log("Circle.prototype.closestCircleCircleDistance");
   // get all points
   var points = [];
 
@@ -513,7 +720,6 @@ Circle.prototype.closestPointDistance = function() {
 };
 
 Circle.prototype.closestSize = function() {
-console.log("Circle.prototype.closestSize");
   var d = 1E50;
 
   if (this.circles.length > 0) {
@@ -603,14 +809,14 @@ Circle.prototype.moveBy = function(dx, dy) {
     this.circles[i].moveBy(dx, dy);
 };
 
-Circle.prototype.draw = function(pos, size) {
+Circle.prototype.generate = function(pos, size) {
   var ps = 8;
 
   var size1 = size/factors.maxS;
 
   if (this.circles.length > 0) {
     for (var i = 0; i < this.circles.length; ++i)
-      this.circles[i].draw(pos, size);
+      this.circles[i].generate(pos, size);
   }
   else {
     var s = 0.9*factors.s*size1;
@@ -620,10 +826,8 @@ Circle.prototype.draw = function(pos, size) {
       var xc = (this.c.x - 0.5)*size1 + pos.x;
       var yc = (this.c.y - 0.5)*size1 + pos.y;
 
-      factors.gc.strokeStyle = "#00000000";
-      factors.gc.fillStyle   = "#000000";
-
-      factors.drawEllipse(xc - ps/2, yc - ps/2, ps, ps);
+      factors.addDebugCircle(new Rect(xc - ps/2, yc - ps/2, ps, ps),
+                             new Color(0, 0, 0, 0), new Color(0, 0, 0, 0.4));
     }
 
     // draw point circles
@@ -635,34 +839,28 @@ Circle.prototype.draw = function(pos, size) {
 
       // draw point circle
       var rgb = HSVtoRGB(360.0*(this.id + i)/factors.lastId, 0.6, 0.6);
-      //c.setHsv((360.0*(this.id + i))/factors.lastId, 192, 192);
 
-      factors.gc.strokeStyle = "#00000000";
-      factors.gc.fillStyle   = encodeRGB(rgb.r, rgb.g, rgb.b);
-
-      factors.drawEllipse(x - s/2, y - s/2, s, s);
+      factors.addDrawCircle(new Rect(x - s/2, y - s/2, s, s), new Color(0, 0, 0, 0), rgb);
 
       // draw point
       if (factors.debug) {
-        factors.gc.strokeStyle = "#00000000";
-        factors.gc.fillStyle   = "#000000";
-
-        factors.drawEllipse(x - ps/2, y - ps/2, ps, ps);
+        factors.addDebugCircle(new Rect(x - ps/2, y - ps/2, ps, ps),
+                               new Color(0, 0, 0, 0), new Color(0, 0, 0, 1));
       }
     }
   }
 
+  //------
+
   // draw bounding circle
   if (factors.debug) {
-    factors.gc.strokeStyle = "#000000";
-    factors.gc.fillStyle   = "#00000000";
-
     var s = this.r*size1;
 
     var x = (this.c.x - 0.5)*size1 + pos.x;
     var y = (this.c.y - 0.5)*size1 + pos.y;
 
-    factors.drawEllipse(x - s, y - s, 2*s, 2*s);
+    factors.addDebugCircle(new Rect(x - s, y - s, 2*s, 2*s),
+                           new Color(0, 0, 0, 0.4), new Color(0, 0, 0, 0));
   }
 };
 
@@ -723,7 +921,7 @@ Prime.prototype.factors = function(n) {
       if (! this.isPrime(i))
         continue;
 
-      if (n % i != 0)
+      if ((n % i) !== 0)
         continue;
 
       v.push(i);
@@ -742,7 +940,60 @@ Prime.prototype.factors = function(n) {
 
 //------
 
+function DrawCircle (rect, pen, brush) {
+  this.rect     = rect;
+  this.pen      = pen;
+  this.brush    = brush;
+  this.oldRect  = null;
+  this.oldPen   = null;
+  this.oldBrush = null;
+};
+
+//------
+
 function Point (x, y) {
   this.x = x;
   this.y = y;
 }
+
+//------
+
+function Size (w, h) {
+  this.w = w;
+  this.h = h;
+}
+
+//------
+
+function Rect (x, y, w, h) {
+  this.x = x;
+  this.y = y;
+  this.w = w;
+  this.h = h;
+}
+
+Rect.prototype.center = function() {
+  return new Point(this.x + this.w/2, this.y + this.h/2);
+};
+
+Rect.prototype.size = function() {
+  return new Size(this.w, this.h);
+};
+
+//------
+
+function Color (r, g, b, a) {
+  this.r = r;
+  this.g = g;
+  this.b = b;
+  this.a = a;
+}
+
+Color.prototype.encodeRGB = function() {
+  var s = "rgba(" + String(255*this.r) + "," +
+                    String(255*this.g) + "," +
+                    String(255*this.b) + "," +
+                    String(this.a) + ")";
+
+  return s;
+};
