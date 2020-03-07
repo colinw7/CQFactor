@@ -3,6 +3,7 @@
 
 #include <QWidget>
 #include <vector>
+#include <cmath>
 
 class QSpinBox;
 class QTimer;
@@ -176,9 +177,12 @@ class Circle {
 
  ~Circle();
 
-  std::size_t id() const { return id_; }
+  Circle *parent() const { return parent_; }
 
+  std::size_t id() const { return id_; }
   void setId(std::size_t n);
+
+  std::size_t n() const { return n_; }
 
   double x() const { return c_.x(); }
   double y() const { return c_.y(); }
