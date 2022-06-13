@@ -172,7 +172,7 @@ addDrawCircle(const QRectF &r, const QColor &pen, const QColor &brush)
   DrawCircle &drawCircle = drawCircles_.back();
 
   if (oldInd_ < int(oldDrawCircles_.size())) {
-    DrawCircle &oldDrawCircle = oldDrawCircles_[oldInd_];
+    DrawCircle &oldDrawCircle = oldDrawCircles_[size_t(oldInd_)];
 
     drawCircle.oldRect  = oldDrawCircle.rect;
     drawCircle.oldPen   = oldDrawCircle.pen;
@@ -245,17 +245,17 @@ void
 App::
 addFadeOut()
 {
-  int n1 = oldDrawCircles_.size();
-  int n2 = drawCircles_   .size();
+  auto n1 = int(oldDrawCircles_.size());
+  auto n2 = int(drawCircles_   .size());
 
   int nfade = n1 - n2;
 
   for (int i = 0; i < nfade; ++i) {
     DrawCircle drawCircle;
 
-    drawCircle.oldRect  = oldDrawCircles_[n2 + i].rect;
-    drawCircle.oldPen   = oldDrawCircles_[n2 + i].pen;
-    drawCircle.oldBrush = oldDrawCircles_[n2 + i].brush;
+    drawCircle.oldRect  = oldDrawCircles_[size_t(n2 + i)].rect;
+    drawCircle.oldPen   = oldDrawCircles_[size_t(n2 + i)].pen;
+    drawCircle.oldBrush = oldDrawCircles_[size_t(n2 + i)].brush;
 
     drawCircle.rect  = QRectF(width()/2, height()/2, 0.1, 0.1);
     drawCircle.pen   = QColor(0, 0, 0, 0);
@@ -353,7 +353,7 @@ calcFactors(Circle *circle, const Factors &f)
 
   // add n circles
   for (int i = 0; i < n1; ++i) {
-    auto circle1 = new Circle(this, circle, i);
+    auto circle1 = new Circle(this, circle, size_t(i));
 
     circle->addCircle(circle1);
 
@@ -368,7 +368,7 @@ calcPrime(Circle *circle, int n)
   assert(n > 0);
 
   // reserve n ids
-  circle->setId(n);
+  circle->setId(size_t(n));
 
   // add n points
   for (int i = 0; i < n; ++i)
@@ -526,8 +526,8 @@ draw(QPainter *painter)
   else
     td1 = (tw2 - tw1)/2.0;
 
-  painter->drawText(20 + td1,   fm.height() + 20 - fm.descent(), factorStr);
-  painter->drawText(20 + td2, 2*fm.height() + 20 - fm.descent(), factorsStr);
+  painter->drawText(int(20 + td1), int(  fm.height() + 20 - fm.descent()), factorStr);
+  painter->drawText(int(20 + td2), int(2*fm.height() + 20 - fm.descent()), factorsStr);
 }
 
 //------
@@ -581,7 +581,7 @@ place()
   if (! circles_.empty()) {
     auto nc = circles_.size();
 
-    double da = 2.0*M_PI/nc;
+    double da = 2.0*M_PI/double(nc);
 
     // place child circles
     double a = a_;
@@ -644,13 +644,13 @@ place()
     // place points in circle
     if (np > 1) {
       double a  = a_;
-      double da = 2.0*M_PI/np;
+      double da = 2.0*M_PI/double(np);
 
       for (std::size_t i = 0; i < np; ++i) {
         double x1 = std::cos(a);
         double y1 = std::sin(a);
 
-        setPoint(i, QPointF(x1, y1));
+        setPoint(int(i), QPointF(x1, y1));
 
         a += da;
       }
@@ -727,7 +727,7 @@ fit()
   if (d > 1E-6)
     s = sqrt(d);
   else
-    s = 1.0/np;
+    s = 1.0/double(np);
 
   xmin -= s/2.0;
   ymin -= s/2.0;
@@ -901,7 +901,7 @@ getPoints(Points &points) const
   auto np = numPoints();
 
   for (std::size_t i = 0; i < np; ++i)
-    points.push_back(getPoint(i));
+    points.push_back(getPoint(int(i)));
 }
 
 void
@@ -914,14 +914,15 @@ getCirclePoints(CirclePoints &points) const
   auto np = numPoints();
 
   for (std::size_t i = 0; i < np; ++i)
-    points.emplace_back(this, getPoint(i));
+    points.emplace_back(this, getPoint(int(i)));
 }
 
 QPointF
 Circle::
 getPoint(int i) const
 {
-  return QPointF(x() + r_*points_[i].x(), y() + r_*points_[i].y());
+  return QPointF(x() + r_*points_[size_t(i)].x(),
+                 y() + r_*points_[size_t(i)].y());
 }
 
 void
@@ -965,14 +966,14 @@ generate(const QPointF &pos, double size)
       double yc = (y() - 0.5)*size1 + pos.y();
 
       app_->addDebugCircle(QRectF(xc - ps/2, yc - ps/2, ps, ps),
-                           QColor(0, 0, 0, 0), QColor(0, 0, 0, 0.4*255));
+                           QColor(0, 0, 0, 0), QColor(0, 0, 0, int(0.4*255.0)));
     }
 
     // draw point circles
     auto np = numPoints();
 
     for (std::size_t i = 0; i < np; ++i) {
-      QPointF p = getPoint(i);
+      QPointF p = getPoint(int(i));
 
       double x = (p.x() - 0.5)*size1 + pos.x();
       double y = (p.y() - 0.5)*size1 + pos.y();
@@ -980,7 +981,7 @@ generate(const QPointF &pos, double size)
       // draw point circle
       QColor c;
 
-      c.setHsv((360.0*(id_ + i))/lastId(), 0.6*255, 0.6*255);
+      c.setHsv(int(360.0*double(id_ + i)/double(lastId())), int(0.6*255.0), int(0.6*255.0));
 
       app_->addDrawCircle(QRectF(x - s/2, y - s/2, s, s), QColor(0, 0, 0, 0), c);
 
@@ -1002,7 +1003,7 @@ generate(const QPointF &pos, double size)
     double y = (this->y() - 0.5)*size1 + pos.y();
 
     app_->addDebugCircle(QRectF(x - s, y - s, 2*s, 2*s),
-                         QColor(0, 0, 0, 0.4*255), QColor(0, 0, 0, 0));
+                         QColor(0, 0, 0, int(0.4*255.0)), QColor(0, 0, 0, 0));
   }
 }
 

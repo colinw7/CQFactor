@@ -224,7 +224,7 @@ class Circle {
   std::size_t numPoints() const { return points_.size(); }
 
   QPointF getPoint(int i) const;
-  void setPoint(int i, const QPointF &p) { points_[i] = p; }
+  void setPoint(int i, const QPointF &p) { points_[size_t(i)] = p; }
 
   void generate(const QPointF &pos, double size);
 
