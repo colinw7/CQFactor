@@ -1,9 +1,8 @@
 #ifndef CQFactor_H
 #define CQFactor_H
 
+#include <CCircleFactor.h>
 #include <QWidget>
-#include <vector>
-#include <cmath>
 
 class QSpinBox;
 class QTimer;
@@ -36,44 +35,58 @@ class Window : public QWidget {
 
 //------
 
-class Circle;
-
-using Circles = std::vector<Circle *>;
-
-//----
-
-struct DrawCircle {
+struct DrawCircleData {
   QRectF rect;
   QColor pen;
   QColor brush;
-  QRectF oldRect;
-  QColor oldPen;
-  QColor oldBrush;
+
+  DrawCircleData() = default;
+
+  DrawCircleData(const QRectF &rect, const QColor &pen, const QColor &brush) :
+   rect(rect), pen(pen), brush(brush) {
+  }
+};
+
+struct DrawCircle {
+  DrawCircleData data;
+  DrawCircleData oldData;
 
   DrawCircle() = default;
 
   DrawCircle(const QRectF &rect, const QColor &pen, const QColor &brush) :
-   rect(rect), pen(pen), brush(brush) {
+   data(rect, pen, brush) {
   }
 };
 
 //---
 
+class AppCircleMgr;
+
 class App : public QWidget {
   Q_OBJECT
 
-  Q_PROPERTY(bool debug          READ debug          WRITE setDebug         )
-  Q_PROPERTY(int  animIterations READ animIterations WRITE setAnimIterations)
+  Q_PROPERTY(bool   debug          READ isDebug        WRITE setDebug         )
+  Q_PROPERTY(int    animIterations READ animIterations WRITE setAnimIterations)
+  Q_PROPERTY(double hsvSaturation  READ hsvSaturation  WRITE setHsvSaturation )
+  Q_PROPERTY(double hsvValue       READ hsvValue       WRITE setHsvValue      )
 
  public:
   App(QWidget *parent=0);
  ~App();
 
-  bool debug() const { return debug_; }
+  bool isDebug() const { return debug_; }
   void setDebug(bool debug);
 
   int animIterations() const { return animIterations_; }
   void setAnimIterations(int i) { animIterations_ = i; }
+
+  double hsvSaturation() const { return hsvSaturation_; }
+  void setHsvSaturation(double r) { hsvSaturation_ = r; }
+
+  double hsvValue() const { return hsvValue_; }
+  void setHsvValue(double r) { hsvValue_ = r; }
+
+  AppCircleMgr *circleMgr() { return circleMgr_; }
 
   void addTimer();
 
@@ -85,9 +98,6 @@ class App : public QWidget {
 
  public slots:
   void factorEntered(int i);
-
- private:
-  using Factors = std::vector<int>;
 
  private:
   void applyFactor();
@@ -102,17 +112,9 @@ class App : public QWidget {
 
   void calc();
 
-  double s() const { return s_; }
-  void setS(double s, double maxS) { s_ = s; maxS_ = maxS; }
-
-  double maxS() const { return maxS_; }
-
   void paintEvent(QPaintEvent *);
 
   void resizeEvent(QResizeEvent *);
-
-  void calcFactors(Circle *circle, const Factors &f);
-  void calcPrime  (Circle *circle, int n);
 
   void generate();
 
@@ -128,18 +130,16 @@ class App : public QWidget {
 
   using DrawCircles = std::vector<DrawCircle>;
 
-  int         factor_  { 1 };
-  bool        debug_   { false };
-  Factors     factors_;
-  Circle*     circle_  { nullptr };
-  double      s_       { 1.0 };
-  double      maxS_    { 1.0 };
-  QPointF     pos_;
-  double      size_    { 1.0 };
+  bool debug_ { false };
+
+  double hsvSaturation_ { 0.6 };
+  double hsvValue_      { 0.6 };
 
   int     animIterations_ { 100 };
   QTimer *animateTimer_   { nullptr };
   int     animateCount_   { 0 };
+
+  AppCircleMgr *circleMgr_ { nullptr };
 
   DrawCircles drawCircles_;
   DrawCircles debugCircles_;
@@ -150,103 +150,32 @@ class App : public QWidget {
 
 //---
 
-struct CirclePoint {
-  const Circle *circle { nullptr };
-  QPointF       point;
-
-  CirclePoint(const Circle *c, const QPointF &p) :
-   circle(c), point(p) {
-  }
-};
-
-//---
-
-using CirclePoints = std::vector<CirclePoint>;
-using Points       = std::vector<QPointF>;
-
-//---
-
-class Circle {
+class AppCircleMgr : public CCircleFactor::CircleMgr {
  public:
-  static std::size_t lastId() { return lastIdRef(); }
+  AppCircleMgr(App *app) :
+   app_(app) {
+  }
 
-  static void resetId() { lastIdRef() = 0; }
+  void addDrawCircle(double xc, double yc, double size, double f) override {
+    QColor c;
 
-  Circle(App *app);
-  Circle(App *app, Circle *parent, std::size_t n);
+    double s = app_->hsvSaturation();
+    double v = app_->hsvValue();
 
- ~Circle();
+    c.setHsv(int(f*360.0), int(s*255.0), int(v*255.0));
 
-  Circle *parent() const { return parent_; }
+    app_->addDrawCircle(QRectF(xc - size/2, yc - size/2, size, size), QColor(0, 0, 0, 0), c);
+  }
 
-  std::size_t id() const { return id_; }
-  void setId(std::size_t n);
-
-  std::size_t n() const { return n_; }
-
-  double x() const { return c_.x(); }
-  double y() const { return c_.y(); }
-  double r() const { return r_; }
-
-  double a() const { return a_; }
-  void setA(double a) { a_ = a; }
-
-  double xc() const { return xc_; }
-  double yc() const { return yc_; }
-
-  void addCircle(Circle *circle);
-
-  void addPoint();
-
-  void place();
-
-  //double calcR() const;
-
-  void fit();
-
-  void move  (double x, double y);
-  void moveBy(double dx, double dy);
-
-  double closestCircleCircleDistance() const;
-
-  double closestPointDistance() const;
-
-  double closestSize() const;
-
-  std::size_t size() const;
-
-  QPointF center() const;
-
-  void getPoints(Points &points) const;
-
-  void getCirclePoints(CirclePoints &points) const;
-
-  std::size_t numPoints() const { return points_.size(); }
-
-  QPointF getPoint(int i) const;
-  void setPoint(int i, const QPointF &p) { points_[size_t(i)] = p; }
-
-  void generate(const QPointF &pos, double size);
-
- private:
-  static std::size_t &lastIdRef() {
-    static std::size_t lastId;
-
-    return lastId;
+  void addDebugCircle(double xc, double yc, double size, double strokeAlpha,
+                      double fillAlpha) override {
+    app_->addDebugCircle(QRectF(xc - size/2, yc - size/2, size, size),
+                         QColor(0, 0, 0, int(255*strokeAlpha)),
+                         QColor(0, 0, 0, int(255*fillAlpha)));
   }
 
  private:
-  App*        app_    { nullptr };   // parent app
-  Circle*     parent_ { nullptr };   // parent circle (0 if none)
-  std::size_t id_     { 0 };         // index (for color)
-  std::size_t n_      { 0 };         // index in parent
-  QPointF     c_;                    // center (0->1 (screen size))
-  double      r_      { 0.5 };       // radius
-  double      a_      { -M_PI/2.0 }; // angle
-  Points      points_;               // offset from center (0-1)
-  Circles     circles_;              // sub circles
-  double      xc_     { 0.0 };
-  double      yc_     { 0.0 };
+  App *app_ { nullptr };
 };
 
 }

@@ -1,5 +1,4 @@
 #include <CQFactor.h>
-#include <CPrime.h>
 
 #ifdef USE_CQ_APP
 #include <CQApp.h>
@@ -16,10 +15,6 @@
 #include <QTimer>
 #include <QPainter>
 
-#include <cmath>
-#include <iostream>
-#include <cassert>
-
 int
 main(int argc, char **argv)
 {
@@ -29,7 +24,7 @@ main(int argc, char **argv)
   QApplication app(argc, argv);
 #endif
 
-  auto window = new CQFactor::Window;
+  auto *window = new CQFactor::Window;
 
   if (argc > 1) {
     int i = atoi(argv[1]);
@@ -43,7 +38,7 @@ main(int argc, char **argv)
   app.exec();
 }
 
-//-------
+//------
 
 namespace CQFactor {
 
@@ -51,7 +46,9 @@ Window::
 Window(QWidget *parent) :
  QWidget(parent)
 {
-  auto layout = new QVBoxLayout(this);
+  setObjectName("window");
+
+  auto *layout = new QVBoxLayout(this);
   layout->setMargin(2); layout->setSpacing(2);
 
   app_ = new App;
@@ -60,7 +57,7 @@ Window(QWidget *parent) :
 
   layout->addWidget(app_);
 
-  auto llayout = new QHBoxLayout;
+  auto *llayout = new QHBoxLayout;
   llayout->setMargin(2); llayout->setSpacing(2);
 
   edit_ = new QSpinBox;
@@ -75,7 +72,7 @@ Window(QWidget *parent) :
   llayout->addWidget(new QLabel("Number"));
   llayout->addWidget(edit_);
 
-  auto check = new QCheckBox("Debug");
+  auto *check = new QCheckBox("Debug");
 
   connect(check, SIGNAL(stateChanged(int)), this, SLOT(debugSlot(int)));
 
@@ -123,9 +120,13 @@ App::
 App(QWidget *parent) :
  QWidget(parent)
 {
+  setObjectName("CQFactor");
+
   //setFocusPolicy(Qt::StrongFocus);
 
   setMinimumSize(QSize(400, 400));
+
+  circleMgr_ = new AppCircleMgr(this);
 
   calc();
 }
@@ -141,6 +142,8 @@ App::
 setDebug(bool debug)
 {
   debug_ = debug;
+
+  circleMgr_->setDebug(debug_);
 
   applyFactor();
 }
@@ -158,9 +161,7 @@ void
 App::
 reset()
 {
-  delete circle_;
-
-  circle_ = nullptr;
+  circleMgr_->reset();
 }
 
 void
@@ -169,24 +170,24 @@ addDrawCircle(const QRectF &r, const QColor &pen, const QColor &brush)
 {
   drawCircles_.emplace_back(r, pen, brush);
 
-  DrawCircle &drawCircle = drawCircles_.back();
+  auto &drawCircle = drawCircles_.back();
 
   if (oldInd_ < int(oldDrawCircles_.size())) {
-    DrawCircle &oldDrawCircle = oldDrawCircles_[size_t(oldInd_)];
+    // update exiting old to existing circle
+    auto &oldDrawCircle = oldDrawCircles_[size_t(oldInd_)];
 
-    drawCircle.oldRect  = oldDrawCircle.rect;
-    drawCircle.oldPen   = oldDrawCircle.pen;
-    drawCircle.oldBrush = oldDrawCircle.brush;
+    drawCircle.oldData = oldDrawCircle.data;
 
     ++oldInd_;
   }
   else {
+    // add new circle at center
     double xc = width ()/2;
     double yc = height()/2;
 
-    drawCircle.oldRect  = QRectF(xc - r.width()/2, yc - r.height()/2, r.width(), r.height());
-    drawCircle.oldPen   = QColor(0, 0, 0, 0);
-    drawCircle.oldBrush = QColor(0, 0, 0, 0);
+    drawCircle.oldData.rect  = QRectF(xc - r.width()/2, yc - r.height()/2, r.width(), r.height());
+    drawCircle.oldData.pen   = QColor(0, 0, 0, 0);
+    drawCircle.oldData.brush = QColor(0, 0, 0, 0);
   }
 }
 
@@ -201,8 +202,10 @@ void
 App::
 factorEntered(int i)
 {
-  if (i != factor_) {
-    factor_ = i;
+  auto factor = circleMgr_->factor();
+
+  if (i != factor) {
+    circleMgr_->setFactor(i);
 
     applyFactor();
   }
@@ -253,13 +256,11 @@ addFadeOut()
   for (int i = 0; i < nfade; ++i) {
     DrawCircle drawCircle;
 
-    drawCircle.oldRect  = oldDrawCircles_[size_t(n2 + i)].rect;
-    drawCircle.oldPen   = oldDrawCircles_[size_t(n2 + i)].pen;
-    drawCircle.oldBrush = oldDrawCircles_[size_t(n2 + i)].brush;
+    drawCircle.oldData = oldDrawCircles_[size_t(n2 + i)].data;
 
-    drawCircle.rect  = QRectF(width()/2, height()/2, 0.1, 0.1);
-    drawCircle.pen   = QColor(0, 0, 0, 0);
-    drawCircle.brush = QColor(0, 0, 0, 0);
+    drawCircle.data.rect  = QRectF(width()/2, height()/2, 0.1, 0.1);
+    drawCircle.data.pen   = QColor(0, 0, 0, 0);
+    drawCircle.data.brush = QColor(0, 0, 0, 0);
 
     drawCircles_.push_back(drawCircle);
   }
@@ -270,9 +271,9 @@ App::
 resetFade()
 {
   for (auto &drawCircle : drawCircles_) {
-    drawCircle.oldRect  = QRectF();
-    drawCircle.oldPen   = drawCircle.pen;
-    drawCircle.oldBrush = drawCircle.brush;
+    drawCircle.oldData.rect  = QRectF();
+    drawCircle.oldData.pen   = drawCircle.data.pen;
+    drawCircle.oldData.brush = drawCircle.data.brush;
   }
 }
 
@@ -291,22 +292,7 @@ void
 App::
 calc()
 {
-  Circle::resetId();
-
-  reset();
-
-  factors_ = CPrime::factors(factor_);
-
-  circle_ = new Circle(this);
-
-  if (CPrime::isPrime(factor_))
-    calcPrime(circle_, factor_);
-  else
-    calcFactors(circle_, factors_);
-
-  circle_->place();
-
-  circle_->fit();
+  circleMgr_->calc();
 }
 
 void
@@ -331,64 +317,14 @@ resizeEvent(QResizeEvent *)
 
 void
 App::
-calcFactors(Circle *circle, const Factors &f)
-{
-  if (f.size() == 1) {
-    calcPrime(circle, f[0]);
-    return;
-  }
-
-  //------
-
-  // split into first factor and list of remaining factors
-  auto pf = f.begin();
-
-  auto n1 = *pf++;
-
-  Factors f1;
-
-  std::copy(pf, f.end(), std::back_inserter(f1));
-
-  //------
-
-  // add n circles
-  for (int i = 0; i < n1; ++i) {
-    auto circle1 = new Circle(this, circle, size_t(i));
-
-    circle->addCircle(circle1);
-
-    calcFactors(circle1, f1);
-  }
-}
-
-void
-App::
-calcPrime(Circle *circle, int n)
-{
-  assert(n > 0);
-
-  // reserve n ids
-  circle->setId(size_t(n));
-
-  // add n points
-  for (int i = 0; i < n; ++i)
-    circle->addPoint();
-}
-
-void
-App::
 generate()
 {
   drawCircles_ .clear();
   debugCircles_.clear();
 
-  double xc = circle_->xc();
-  double yc = circle_->yc();
+  circleMgr_->setCenter(CCircleFactor::Point(width()/2, height()/2));
 
-  pos_  = QPointF(xc*width(), (1.0 - yc)*height());
-  size_ = std::min(width(), height());
-
-  circle_->generate(pos_, size_);
+  circleMgr_->generate(width(), height());
 }
 
 void
@@ -416,9 +352,9 @@ animateStep()
   };
 
   auto interpRect = [&](const QRectF &from, const QRectF &to, double f) {
-    QPointF c = interpPoint(from.center(), to.center(), f);
+    auto c = interpPoint(from.center(), to.center(), f);
 
-    QSizeF s = interpSize(from.size(), to.size(), f);
+    auto s = interpSize(from.size(), to.size(), f);
 
     return QRectF(c.x() - s.width()/2, c.y() - s.height()/2, s.width(), s.height());
   };
@@ -436,16 +372,16 @@ animateStep()
     double f = 1.0/(animIterations() - animateCount_);
 
     for (auto &drawCircle : drawCircles_) {
-      if (drawCircle.oldRect.isValid()) {
-        drawCircle.oldRect  = interpRect (drawCircle.oldRect , drawCircle.rect , f);
-        drawCircle.oldPen   = interpColor(drawCircle.oldPen  , drawCircle.pen  , f);
-        drawCircle.oldBrush = interpColor(drawCircle.oldBrush, drawCircle.brush, f);
+      if (drawCircle.oldData.rect.isValid()) {
+        drawCircle.oldData.rect  = interpRect (drawCircle.oldData.rect , drawCircle.data.rect , f);
+        drawCircle.oldData.pen   = interpColor(drawCircle.oldData.pen  , drawCircle.data.pen  , f);
+        drawCircle.oldData.brush = interpColor(drawCircle.oldData.brush, drawCircle.data.brush, f);
       }
     }
   }
   else {
     for (auto &drawCircle : drawCircles_) {
-      drawCircle.oldRect = QRectF();
+      drawCircle.oldData.rect = QRectF();
     }
 
     animateTimer_->stop();
@@ -463,33 +399,37 @@ draw(QPainter *painter)
   painter->setRenderHint(QPainter::Antialiasing, true);
 
   for (const auto &drawCircle : drawCircles_) {
-    if (drawCircle.oldRect.isValid()) {
-      painter->setPen  (drawCircle.oldPen);
-      painter->setBrush(drawCircle.oldBrush);
+    if (drawCircle.oldData.rect.isValid()) {
+      painter->setPen  (drawCircle.oldData.pen);
+      painter->setBrush(drawCircle.oldData.brush);
 
-      painter->drawEllipse(drawCircle.oldRect);
+      painter->drawEllipse(drawCircle.oldData.rect);
     }
     else {
-      painter->setPen  (drawCircle.pen);
-      painter->setBrush(drawCircle.brush);
+      painter->setPen  (drawCircle.data.pen);
+      painter->setBrush(drawCircle.data.brush);
 
-      painter->drawEllipse(drawCircle.rect);
+      painter->drawEllipse(drawCircle.data.rect);
     }
   }
 
   for (const auto &debugCircle : debugCircles_) {
-    painter->setPen  (debugCircle.pen);
-    painter->setBrush(debugCircle.brush);
+    painter->setPen  (debugCircle.data.pen);
+    painter->setBrush(debugCircle.data.brush);
 
-    painter->drawEllipse(debugCircle.rect);
+    painter->drawEllipse(debugCircle.data.rect);
   }
 
   //------
 
   // draw number and factors
-  auto factorStr = QString("%1").arg(factor_);
+  auto factor = circleMgr_->factor();
 
-  auto nf = factors_.size();
+  auto factorStr = QString("%1").arg(factor);
+
+  const auto &factors = circleMgr_->factors();
+
+  auto nf = factors.size();
 
   QString factorsStr;
 
@@ -497,7 +437,7 @@ draw(QPainter *painter)
     for (std::size_t i = 0; i < nf; ++i) {
       if (i > 0) factorsStr += "x";
 
-      factorsStr += QString("%1").arg(factors_[i]);
+      factorsStr += QString("%1").arg(factors[i]);
     }
   }
   else {
@@ -530,481 +470,6 @@ draw(QPainter *painter)
   painter->drawText(int(20 + td2), int(2*fm.height() + 20 - fm.descent()), factorsStr);
 }
 
-//------
-
-Circle::
-Circle(App *app) :
- app_(app)
-{
-}
-
-Circle::
-Circle(App *app, Circle *parent, std::size_t n) :
- app_(app), parent_(parent), n_(n)
-{
-}
-
-Circle::
-~Circle()
-{
-  for (auto &circle : circles_)
-    delete circle;
-}
-
-void
-Circle::
-setId(std::size_t n)
-{
-  id_ = lastId();
-
-  lastIdRef() += n;
-}
-
-void
-Circle::
-addCircle(Circle *circle)
-{
-  circles_.push_back(circle);
-}
-
-void
-Circle::
-addPoint()
-{
-  points_.emplace_back(0.0, 0.0);
-}
-
-void
-Circle::
-place()
-{
-  if (! circles_.empty()) {
-    auto nc = circles_.size();
-
-    double da = 2.0*M_PI/double(nc);
-
-    // place child circles
-    double a = a_;
-
-    for (auto &circle : circles_) {
-      if (size() == 2 && circle->size() == 2)
-        circle->setA(a + M_PI/2.0);
-      else
-        circle->setA(a);
-
-      circle->place();
-
-      a += da;
-    }
-
-    // find minimum point distance for child circles
-    double d = 1E50;
-
-    for (auto &circle : circles_) {
-      d = std::min(d, circle->closestPointDistance());
-    }
-
-    double rr = d/2.0;
-
-    // place in circle (center (0.5, 0.5), radius 0.5)
-    c_ = QPointF(0.5, 0.5);
-    r_ = 0.5;
-
-    for (;;) {
-      a = a_;
-
-      for (auto &circle : circles_) {
-        double x1 = x() + r_*std::cos(a);
-        double y1 = y() + r_*std::sin(a);
-
-        circle->move(x1, y1);
-
-        a += da;
-      }
-
-      double r1 = closestCircleCircleDistance()/2;
-
-      double dr = fabs(r1 - rr);
-
-      if (dr < 1E-3)
-        break;
-
-      if (r1 < rr)
-        r_ += dr/2;
-      else
-        r_ -= dr/2;
-    }
-  }
-  else {
-    auto np = numPoints();
-
-    c_ = QPointF(0.5, 0.5);
-    r_ = 0.5;
-
-    // place points in circle
-    if (np > 1) {
-      double a  = a_;
-      double da = 2.0*M_PI/double(np);
-
-      for (std::size_t i = 0; i < np; ++i) {
-        double x1 = std::cos(a);
-        double y1 = std::sin(a);
-
-        setPoint(int(i), QPointF(x1, y1));
-
-        a += da;
-      }
-    }
-    else {
-      setPoint(0, QPointF(0.0, 0.0));
-    }
-  }
-}
-
-#if 0
-double
-Circle::
-calcR() const
-{
-  if (parent_) {
-    if (parent_->size() == 2 && size() == 2)
-      return parent_->calcR();
-    else
-      return 0.5*parent_->calcR();
-  }
-  else
-    return 0.5;
-}
-#endif
-
-void
-Circle::
-fit()
-{
-  // get all points
-  Points points;
-
-  getPoints(points);
-
-  // calc closest centers and range
-  auto np = points.size();
-
-  double xmin = 0.5;
-  double ymin = 0.5;
-  double xmax = xmin;
-  double ymax = ymin;
-
-  double d = 2;
-
-  for (std::size_t i = 0; i < np; ++i) {
-    const QPointF &p1 = points[i];
-
-    for (std::size_t j = i + 1; j < np; ++j) {
-      assert(i != j);
-
-      const QPointF &p2 = points[j];
-
-      double dx = p1.x() - p2.x();
-      double dy = p1.y() - p2.y();
-
-      double d1 = dx*dx + dy*dy;
-
-      if (d1 < d)
-        d = d1;
-    }
-
-    xmin = std::min(xmin, p1.x());
-    ymin = std::min(ymin, p1.y());
-    xmax = std::max(xmax, p1.x());
-    ymax = std::max(ymax, p1.y());
-  }
-
-  //---
-
-  // use closest center to defined size so points don't touch
-  double s = 0.0;
-
-  if (d > 1E-6)
-    s = sqrt(d);
-  else
-    s = 1.0/double(np);
-
-  xmin -= s/2.0;
-  ymin -= s/2.0;
-  xmax += s/2.0;
-  ymax += s/2.0;
-
-  double xs = xmax - xmin;
-  double ys = ymax - ymin;
-
-  double maxS = std::max(xs, ys);
-
-  app_->setS(s, maxS);
-
-  xc_ = ((xmax + xmin)/2.0 - 0.5)/maxS + 0.5;
-  yc_ = ((ymax + ymin)/2.0 - 0.5)/maxS + 0.5;
-
-  //c_ += QPointF(xc_ - 0.5, yc_ - 0.5);
-
-  //moveBy(0.5 - xc_, 0.5 - yc_);
-}
-
-double
-Circle::
-closestCircleCircleDistance() const
-{
-  // get all points
-  CirclePoints points;
-
-  getCirclePoints(points);
-
-  // calc closest centers and range
-  auto np = points.size();
-
-  double d = 1E50;
-
-  for (std::size_t i = 0; i < np; ++i) {
-    const CirclePoint &p1 = points[i];
-
-    for (std::size_t j = i + 1; j < np; ++j) {
-      const CirclePoint &p2 = points[j];
-
-      if (p1.circle == p2.circle) continue;
-
-      double dx = p1.point.x() - p2.point.x();
-      double dy = p1.point.y() - p2.point.y();
-
-      double d1 = dx*dx + dy*dy;
-
-      if (d1 < d)
-        d = d1;
-    }
-  }
-
-  return sqrt(d);
-}
-
-double
-Circle::
-closestPointDistance() const
-{
-  // get all points
-  Points points;
-
-  getPoints(points);
-
-  // calc closest centers and range
-  auto np = points.size();
-
-  double d = 1E50;
-
-  for (std::size_t i = 0; i < np; ++i) {
-    const QPointF &p1 = points[i];
-
-    for (std::size_t j = i + 1; j < np; ++j) {
-      assert(i != j);
-
-      const QPointF &p2 = points[j];
-
-      double dx = p1.x() - p2.x();
-      double dy = p1.y() - p2.y();
-
-      double d1 = dx*dx + dy*dy;
-
-      if (d1 < d)
-        d = d1;
-    }
-  }
-
-  return sqrt(d);
-}
-
-double
-Circle::
-closestSize() const
-{
-  double d = 1E50;
-
-  if (! circles_.empty()) {
-    auto nc = circles_.size();
-
-    for (std::size_t i = 0; i < nc; ++i) {
-      Circle *c1 = circles_[i];
-
-      QPointF p1 = c1->center();
-
-      for (std::size_t j = i + 1; j < nc; ++j) {
-        assert(i != j);
-
-        Circle *c2 = circles_[j];
-
-        QPointF p2 = c2->center();
-
-        double dx = p1.x() - p2.x();
-        double dy = p1.y() - p2.y();
-
-        double d1 = dx*dx + dy*dy;
-
-        if (d1 < d)
-          d = d1;
-      }
-    }
-  }
-  else {
-    auto np = points_.size();
-
-    for (std::size_t i = 0; i < np; ++i) {
-      const QPointF &p1 = points_[i];
-
-      for (std::size_t j = i + 1; j < np; ++j) {
-        assert(i != j);
-
-        const QPointF &p2 = points_[j];
-
-        double dx = p1.x() - p2.x();
-        double dy = p1.y() - p2.y();
-
-        double d1 = dx*dx + dy*dy;
-
-        if (d1 < d)
-          d = d1;
-      }
-    }
-  }
-
-  d = sqrt(d);
-
-  return d;
-}
-
-std::size_t
-Circle::
-size() const
-{
-  return std::max(circles_.size(), points_.size());
-}
-
-QPointF
-Circle::
-center() const
-{
-  return c_;
-}
-
-void
-Circle::
-getPoints(Points &points) const
-{
-  for (auto &circle : circles_)
-    circle->getPoints(points);
-
-  auto np = numPoints();
-
-  for (std::size_t i = 0; i < np; ++i)
-    points.push_back(getPoint(int(i)));
-}
-
-void
-Circle::
-getCirclePoints(CirclePoints &points) const
-{
-  for (auto &circle : circles_)
-    circle->getCirclePoints(points);
-
-  auto np = numPoints();
-
-  for (std::size_t i = 0; i < np; ++i)
-    points.emplace_back(this, getPoint(int(i)));
-}
-
-QPointF
-Circle::
-getPoint(int i) const
-{
-  return QPointF(x() + r_*points_[size_t(i)].x(),
-                 y() + r_*points_[size_t(i)].y());
-}
-
-void
-Circle::
-move(double x, double y)
-{
-  double dx = x - this->x();
-  double dy = y - this->y();
-
-  moveBy(dx, dy);
-}
-
-void
-Circle::
-moveBy(double dx, double dy)
-{
-  c_ += QPointF(dx, dy);
-
-  for (auto &circle : circles_)
-    circle->moveBy(dx, dy);
-}
-
-void
-Circle::
-generate(const QPointF &pos, double size)
-{
-  static double ps = 8;
-
-  double size1 = size/app_->maxS();
-
-  if (! circles_.empty()) {
-    for (auto &circle : circles_)
-      circle->generate(pos, size);
-  }
-  else {
-    double s = 0.9*app_->s()*size1;
-
-    // draw center
-    if (app_->debug()) {
-      double xc = (x() - 0.5)*size1 + pos.x();
-      double yc = (y() - 0.5)*size1 + pos.y();
-
-      app_->addDebugCircle(QRectF(xc - ps/2, yc - ps/2, ps, ps),
-                           QColor(0, 0, 0, 0), QColor(0, 0, 0, int(0.4*255.0)));
-    }
-
-    // draw point circles
-    auto np = numPoints();
-
-    for (std::size_t i = 0; i < np; ++i) {
-      QPointF p = getPoint(int(i));
-
-      double x = (p.x() - 0.5)*size1 + pos.x();
-      double y = (p.y() - 0.5)*size1 + pos.y();
-
-      // draw point circle
-      QColor c;
-
-      c.setHsv(int(360.0*double(id_ + i)/double(lastId())), int(0.6*255.0), int(0.6*255.0));
-
-      app_->addDrawCircle(QRectF(x - s/2, y - s/2, s, s), QColor(0, 0, 0, 0), c);
-
-      // draw point
-      if (app_->debug()) {
-        app_->addDebugCircle(QRectF(x - ps/2, y - ps/2, ps, ps),
-                             QColor(0, 0, 0, 0), QColor(0, 0, 0, 255));
-      }
-    }
-  }
-
-  //------
-
-  // draw bounding circle
-  if (app_->debug()) {
-    double s = r_*size1;
-
-    double x = (this->x() - 0.5)*size1 + pos.x();
-    double y = (this->y() - 0.5)*size1 + pos.y();
-
-    app_->addDebugCircle(QRectF(x - s, y - s, 2*s, 2*s),
-                         QColor(0, 0, 0, int(0.4*255.0)), QColor(0, 0, 0, 0));
-  }
-}
+//---
 
 }
