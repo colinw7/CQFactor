@@ -21,10 +21,10 @@ class Window : public QWidget {
 
   QSize sizeHint() const { return QSize(800, 800); }
 
- signals:
+ Q_SIGNALS:
   void factorEntered(int i);
 
- private slots:
+ private Q_SLOTS:
   void factorSlot();
   void debugSlot(int);
 
@@ -96,7 +96,7 @@ class App : public QWidget {
 
   void addDebugCircle(const QRectF &r, const QColor &pen, const QColor &brush);
 
- public slots:
+ public Q_SLOTS:
   void factorEntered(int i);
 
  private:
@@ -122,7 +122,7 @@ class App : public QWidget {
 
   void draw(QPainter *painter);
 
- private slots:
+ private Q_SLOTS:
   void animateSlot();
 
  private:

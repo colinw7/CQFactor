@@ -448,8 +448,8 @@ draw(QPainter *painter)
 
   QFontMetricsF fm(font());
 
-  double tw1 = fm.width(factorStr);
-  double tw2 = fm.width(factorsStr);
+  double tw1 = fm.horizontalAdvance(factorStr);
+  double tw2 = fm.horizontalAdvance(factorsStr);
 
   QRectF rect(20, 20, std::max(tw1, tw2), 2*fm.height());
 
