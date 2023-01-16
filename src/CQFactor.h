@@ -19,7 +19,7 @@ class Window : public QWidget {
 
   void setFactor(int i);
 
-  QSize sizeHint() const { return QSize(800, 800); }
+  QSize sizeHint() const override { return QSize(800, 800); }
 
  Q_SIGNALS:
   void factorEntered(int i);
@@ -112,9 +112,9 @@ class App : public QWidget {
 
   void calc();
 
-  void paintEvent(QPaintEvent *);
+  void paintEvent(QPaintEvent *) override;
 
-  void resizeEvent(QResizeEvent *);
+  void resizeEvent(QResizeEvent *) override;
 
   void generate();
 
