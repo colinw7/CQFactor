@@ -15,7 +15,7 @@ class Window : public QWidget {
   Q_OBJECT
 
  public:
-  Window(QWidget *parent=0);
+  Window(QWidget *parent=nullptr);
 
   void setFactor(int i);
 
@@ -71,7 +71,7 @@ class App : public QWidget {
   Q_PROPERTY(double hsvValue       READ hsvValue       WRITE setHsvValue      )
 
  public:
-  App(QWidget *parent=0);
+  App(QWidget *parent=nullptr);
  ~App();
 
   bool isDebug() const { return debug_; }
